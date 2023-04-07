@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Triad</title>
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      background: linear-gradient(45deg, #C5E5F5, #9BD1E8, #77BAD6);
+      background-size: 600% 600%;
+      animation: gradientAnimation 12s ease infinite;
+    }
+
+    @keyframes gradientAnimation {
+      0% {
+        background-position: 0% 50%;
+      }
+
+      50% {
+        background-position: 100% 50%;
+      }
+
+      100% {
+        background-position: 0% 50%;
+      }
+    }
+
+    .game-container {
+      display: flex;
+      background-color: white;
+      padding: 16px;
+      border-radius: 4px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .scoreboard {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      margin-left: 16px;
+      font-family: 'Arial', sans-serif;
+    }
+
+    .scoreboard>div {
+      margin-bottom: 8px;
+    }
+
+    .label {
+      font-size: 20px;
+      font-weight: bold;
+      color: #333;
+    }
+
+    #chainLabel {
+      display: none;
+    }
+
+    .value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #f30;
+      margin-left: 8px;
+    }
+
+    canvas {
+      display: block;
+      background-color: rgba(255, 255, 255, 0.8);
+      border-radius: 2px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+      margin: 0 auto;
+    }
+
+    /* ダイアログのスタイル設定 */
+    .dialog {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: white;
+      border-radius: 5px;
+      padding: 20px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      display: none;
+      /* 初期状態では非表示 */
+      width: 80%;
+      max-width: 400px;
+    }
+
+    .dialog h3 {
+      margin-top: 0;
+      border-bottom: 2px solid #f0f0f0;
+      padding-bottom: 5px;
+    }
+
+    .dialog ul {
+      padding-left: 20px;
+      margin: 0;
+    }
+
+    .dialog li {
+      margin-bottom: 5px;
+    }
+
+    #startButton {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
+      font-size: 16px;
+      margin: 10px 2px;
+      cursor: pointer;
+      padding: 10px 24px;
+      border-radius: 5px;
+    }
+
+    /* ゲームオーバーダイアログ */
+    .dialog.gameover {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: white;
+      border-radius: 5px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      padding: 2rem;
+      text-align: center;
+      width: 300px;
+    }
+
+    .dialog.gameover h3 {
+      margin-bottom: 1rem;
+      color: #ff3b3b;
+      font-size: 1.5rem;
+    }
+
+    .dialog.gameover p {
+      margin-bottom: 1rem;
+      font-size: 1.2rem;
+    }
+
+    .dialog.gameover button {
+      background-color: #1f8ced;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      font-size: 1rem;
+      padding: 0.5rem 1rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="game-container">
+    <canvas id="gameCanvas" width="360" height="520"></canvas>
+    <div id="scoreboard" class="scoreboard">
+      <div>
+        <div class="label">Score</div>
+        <div id="score" class="value">0</div>
+      </div>
+      <div>
+        <div id="chainLabel" class="label">Chain</div>
+        <div id="chain" class="value"></div>
+      </div>
+    </div>
+  </div>
+  <div class="dialog" id="dialog">
+    <h3>ルール</h3>
+    <p>縦方向か横方向にCメジャーのトライアド(三和音)を作る</p>
+    <h3>操作方法</h3>
+    <ul>
+      <li>←: 左に移動</li>
+      <li>→: 右に移動</li>
+      <li>↓: 押している間だけ落下スピードアップ</li>
+      <li>z: 左回転</li>
+      <li>x: 右回転</li>
+      <li>Shift: 一時停止</li>
+    </ul>
+    <div>
+      <h4>縦方向のトライアド判定</h4>
+      <input type="radio" id="checkDirectionDownUp" name="checkDirection" value="down-up" checked />
+      <label for="checkDirectionDownUp">下から上</label>
+      <input type="radio" id="checkDirectionUpDown" name="checkDirection" value="up-down" />
+      <label for="checkDirectionUpDown">上から下</label>
+    </div>
+    <button id="startButton">ゲーム開始</button>
+  </div>
+  <div class="dialog gameover" id="gameOverDialog">
+    <h3>Game Over</h3>
+    <p>Score: <span id="finalScore"></span></p>
+    <button id="retryButton">ワンスモア</button>
+  </div>
+  <script>
+    // HTMLのcanvas要素を取得し、2Dコンテキストを作成
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    let game = null;
+
+    // ゲーム画面の設定
+    const cellSize = 40;
+    const fieldWidth = 9;
+    const fieldHeight = 13;
+
+    // トライアドのリストとノートの色を定義
+    const triads = ['CEG', 'EGC', 'GCE', 'DFA', 'FAD', 'ADF', 'EGB', 'GBE', 'BEG', 'FAC', 'ACF', 'CFA', 'GBD', 'BDG', 'DGB', 'ACE', 'CEA', 'EAC', 'BDF', 'DFB', 'FBD'];
+    const colors = { C: '#FF9999', D: '#FFCC99', E: '#FFFF99', F: '#99FF99', G: '#99CCFF', A: '#9966CC', B: '#CC99FF' };
+
+    let checkDirection = 'down-up';
+
+    // ブロックを表現するクラス
+    class Block {
+      constructor(x, y, note) {
+        this.x = x;
+        this.y = y;
+        this.note = note;
+        this.fadingOut = false; // フェードアウト状態を追加
+        this.opacity = 1; // 透明度を保持するプロパティを追加
+      }
+
+      // ブロックを描画するメソッド
+      draw() {
+        // フェードアウト状態のブロックの透明度を適用
+        if (this.fadingOut) {
+          ctx.globalAlpha = this.opacity;
+        } else {
+          ctx.globalAlpha = 1;
+        }
+
+        // ブロックを描画する処理
+        ctx.fillStyle = colors[this.note];
+        // ctx.strokeStyle = 'black';
+        ctx.lineWidth = 1; // 縁の太さを4pxに変更
+
+        // 影を設定
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.15)';
+        ctx.shadowOffsetX = 4;
+        ctx.shadowOffsetY = 4;
+        ctx.shadowBlur = 4;
+        ctx.fillRect(this.x * cellSize, this.y * cellSize, cellSize, cellSize);
+
+        // 角を設定
+        const borderRadius = 2;
+        ctx.beginPath();
+        ctx.moveTo(this.x * cellSize + borderRadius, this.y * cellSize);
+        ctx.lineTo(this.x * cellSize + cellSize - borderRadius, this.y * cellSize);
+        ctx.quadraticCurveTo(this.x * cellSize + cellSize, this.y * cellSize, this.x * cellSize + cellSize, this.y * cellSize + borderRadius);
+        ctx.lineTo(this.x * cellSize + cellSize, this.y * cellSize + cellSize - borderRadius);
+        ctx.quadraticCurveTo(this.x * cellSize + cellSize, this.y * cellSize + cellSize, this.x * cellSize + cellSize - borderRadius, this.y * cellSize + cellSize);
+        ctx.lineTo(this.x * cellSize + borderRadius, this.y * cellSize + cellSize);
+        ctx.quadraticCurveTo(this.x * cellSize, this.y * cellSize + cellSize, this.x * cellSize, this.y * cellSize + cellSize - borderRadius);
+        ctx.lineTo(this.x * cellSize, this.y * cellSize + borderRadius);
+        ctx.quadraticCurveTo(this.x * cellSize, this.y * cellSize, this.x * cellSize + borderRadius, this.y * cellSize);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // 縁を描画
+        // ctx.strokeRect(this.x * cellSize, this.y * cellSize, cellSize, cellSize);
+
+        ctx.fillStyle = 'black';
+        ctx.font = '20px Arial';
+        ctx.fillText(this.note, this.x * cellSize + cellSize / 2 - 5, this.y * cellSize + cellSize / 2 + 5);
+
+        // 描画の透明度を元に戻す（他の描画要素に影響しないようにする）
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // サウンドを生成するクラス
+    class Sounds {
+      constructor() {
+        this.frequencies = {
+          C: [261.63, 523.25, 1046.50],
+          D: [293.66, 587.33, 1174.66],
+          E: [329.63, 659.26, 1318.51],
+          F: [349.23, 698.46, 1396.91],
+          G: [392.00, 783.99, 1567.98],
+          A: [440.00, 880.00, 1760.00],
+          B: [493.88, 987.77, 1975.53]
+        };
+      }
+
+      playSE(note1, note2, note3) {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const notes = [note1, note2, note3];
+
+        const selectedFrequencies = [];
+        let selectedNotes = '';
+        for (let i = 0; i < notes.length; i++) {
+          if (i === 0) {
+            selectedFrequencies.push(this.frequencies[notes[i]][1]);
+            selectedNotes += notes[i]; // debug用
+          } else if (this.frequencies[notes[i]][1] <= this.frequencies[notes[0]][1]) {
+            selectedFrequencies.push(this.frequencies[notes[i]][2]);
+            selectedNotes += notes[i]; // debug用
+          } else {
+            selectedFrequencies.push(this.frequencies[notes[i]][1]);
+            selectedNotes += notes[i]; // debug用
+          }
+        }
+
+        selectedFrequencies.forEach(frequency => {
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          const lowpassFilter = audioContext.createBiquadFilter();
+
+          oscillator.type = 'triangle';
+          // オシレーターの周波数を、selectedFrequencies配列内の現在の周波数に設定
+          oscillator.frequency.value = frequency;
+
+          // フィルター設定
+          lowpassFilter.type = 'lowpass';
+          lowpassFilter.frequency.value = 8000;
+          lowpassFilter.Q.value = 100;
+
+          const volume = 0.01;
+          const attackTime = 0.15;
+          const decay = 0.4;
+
+          gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+          gainNode.gain.linearRampToValueAtTime(volume, audioContext.currentTime + attackTime);
+          // // その後、減衰を開始
+          gainNode.gain.setTargetAtTime(0, audioContext.currentTime + attackTime, decay);
+
+          // ローパスフィルターからゲインノードへ接続
+          oscillator.connect(gainNode);
+          gainNode.connect(lowpassFilter);
+          lowpassFilter.connect(audioContext.destination); // ゲインノードをオーディオ出力先に接続
+
+          oscillator.start();
+          oscillator.stop(audioContext.currentTime + 5);
+        });
+      }
+    }
+
+    // ゲームのロジックを管理するクラス
+    class Game {
+      constructor() {
+        this.gameOver = false;
+        this.lastUpdate = 0;
+        this.dropInterval = 1000; // 1秒に1回落下させる
+        this.softDrop = 30; // スペースキー押下中はソフトドロップ
+        this.interval = this.dropInterval;
+
+        this.gamePaused = false; // ゲームのポーズ状態を追加
+        this.fadeouting = false;
+        this.dropping = false;
+        this.field = this.createEmptyField();
+        this.currentPair = this.generateNewPair();
+        this.chainCount = 1;
+        this.chainStarted = false;
+
+        this.totalScore = 0;
+        this.getScore = 100;
+
+        this.sounds = new Sounds();
+
+        this.init(); // ゲームの初期化
+      }
+
+      // ゲームのポーズ状態を切り替える
+      togglePause() {
+        this.gamePaused = !this.gamePaused;
+      }
+
+      // 空のゲームフィールドを作成する
+      createEmptyField() {
+        const field = [];
+        for (let y = 0; y < fieldHeight; y++) {
+          const row = [];
+          for (let x = 0; x < fieldWidth; x++) {
+            row.push(null);
+          }
+          field.push(row);
+        }
+        return field;
+      }
+
+      // 新しいノートペアを生成する
+      generateNewPair() {
+        const availableNotes = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+        const note1 = availableNotes[Math.floor(Math.random() * availableNotes.length)];
+        const note2 = availableNotes[Math.floor(Math.random() * availableNotes.length)];
+        return [new Block(Math.floor(fieldWidth / 2) - 1, 0, note1), new Block(Math.floor(fieldWidth / 2), 0, note2)];
+      }
+
+      // 与えられた座標がブロックの移動可能な範囲内であるかをチェック
+      canMove(newX1, newY1, newX2, newY2) {
+        // フィールドをはみ出さないか
+        if (!this.isInBounds(newX1, newY1) || !this.isInBounds(newX2, newY2)) {
+          return false;
+        }
+        // すでに置かれているブロックと重ならないか
+        if (this.field[newY1][newX1] || this.field[newY2][newX2]) {
+          return false;
+        }
+        return true;
+      }
+
+      // ゲームの初期設定とイベントリスナーを設定
+      init() {
+        // キーボードの操作イベントを設定
+        document.addEventListener('keydown', (e) => {
+          // ゲームオーバー、ポーズ、フェードアウト状態でなければ操作可能
+          if (!this.gameOver && !this.gamePaused && !this.fadeouting) {
+
+            if (e.key === 'ArrowLeft') {
+              this.movePair(-1, 0);
+            } else if (e.key === 'ArrowRight') {
+              this.movePair(1, 0);
+            } else if (e.key === 'z' || e.key === 'Z') {
+              this.rotatePair(false);
+            } else if (e.key === 'x' || e.key === 'X') {
+              this.rotatePair();
+            } else if (e.code === 'ArrowDown') {
+              this.interval = this.softDrop;
+            }
+          }
+          if (e.code === 'Space') {
+            this.togglePause(); // 'P'キーが押されたらポーズを切り替える
+          }
+        });
+        // キーボードの操作イベントを設定 (スペースキーが離された時)
+        document.addEventListener('keyup', (e) => {
+          if (e.code === 'ArrowDown') {
+            this.interval = this.dropInterval;
+          }
+        });
+
+        this.loop(); // ゲームループを開始
+      }
+
+      // ゲームのメインループ
+      loop(timestamp) {
+        // 落下間隔が経過したら更新
+        if (timestamp - this.lastUpdate >= this.interval) {
+          this.update();
+          this.lastUpdate = timestamp;
+        }
+
+        // ゲームがポーズされていなければフェードアウトを更新
+        if (!this.gamePaused) {
+          this.updateFadeOut();
+        }
+
+        this.draw(); // 画面を描画
+        requestAnimationFrame((timestamp) => this.loop(timestamp)); // 次のフレームをリクエスト
+      }
+
+      // ブロックのペアを回転させる
+      rotatePair(clockwise = true) {
+        // 現在の座標を取得
+        const x1 = this.currentPair[0].x;
+        const y1 = this.currentPair[0].y;
+        const x2 = this.currentPair[1].x;
+        const y2 = this.currentPair[1].y;
+
+        let newX2, newY2;
+
+        // 右隣にある場合
+        if (x2 === x1 + 1 && y2 === y1) {
+          newX2 = clockwise ? x1 : x1;
+          newY2 = clockwise ? y1 + 1 : y1 - 1;
+        }
+        // 下にある場合
+        else if (x2 === x1 && y2 === y1 + 1) {
+          newX2 = clockwise ? x1 - 1 : x1 + 1;
+          newY2 = clockwise ? y1 : y1;
+        }
+        // 左隣にある場合
+        else if (x2 === x1 - 1 && y2 === y1) {
+          newX2 = clockwise ? x1 : x1;
+          newY2 = clockwise ? y1 - 1 : y1 + 1;
+        }
+        // 上にある場合
+        else if (x2 === x1 && y2 === y1 - 1) {
+          newX2 = clockwise ? x1 + 1 : x1 - 1;
+          newY2 = clockwise ? y1 : y1;
+        }
+
+        // 移動先が有効であれば、ブロックの位置を更新
+        if (this.canMove(x1, y1, newX2, newY2)) {
+          this.currentPair[1].x = newX2;
+          this.currentPair[1].y = newY2;
+        }
+      }
+
+      // ブロックのペアを指定された方向に移動させる
+      movePair(dx, dy) {
+        // 新しい座標を計算
+        const newX1 = this.currentPair[0].x + dx;
+        const newY1 = this.currentPair[0].y + dy;
+        const newX2 = this.currentPair[1].x + dx;
+        const newY2 = this.currentPair[1].y + dy;
+        // 移動先が有効であれば、ブロックの位置を更新
+        if (this.canMove(newX1, newY1, newX2, newY2)) {
+          this.currentPair[0].x = newX1;
+          this.currentPair[1].x = newX2;
+        }
+      }
+
+      // ブロック移動時、フィールドをはみ出していないかを確認する
+      isInBounds(x, y) {
+        return x >= 0 && x < fieldWidth && y >= 0 && y < fieldHeight;
+      }
+
+      // ゲームの状態を更新する
+      update() {
+        // ゲームがポーズされているか、ブロックが自動落下中か、フェードアウト中であれば更新処理をスキップ
+        if (this.gameOver || this.gamePaused || this.fadeouting || this.dropping) {
+          return;
+        }
+
+        // ブロックのペアを下に移動
+        this.currentPair[0].y++;
+        this.currentPair[1].y++;
+
+        // ブロックが着地した場合
+        if (this.isLanded()) {
+          // ブロックのペアをフィールド内の他のブロックに重ねずに固定するために、ブロックのペアのy座標を1つ分戻して、
+          // 直前の位置に戻すことによって重なりを防ぐ
+          this.currentPair[0].y--;
+          this.currentPair[1].y--;
+
+          // ブロックをフィールドに固定
+          this.field[this.currentPair[0].y][this.currentPair[0].x] = this.currentPair[0];
+          this.field[this.currentPair[1].y][this.currentPair[1].x] = this.currentPair[1];
+
+          // ブロックを固定
+          for (const block of this.currentPair) {
+            this.field[block.y][block.x] = block;
+          }
+          // フィールド上で3つ連続したブロックを見つけ、フェードアウトさせる
+          this.checkForTriads();
+          // 新しいペアを生成
+          this.currentPair = this.generateNewPair();
+          // 新しいペアが生成された結果、ゲームオーバーになるかどうかをチェック
+          this.gameOver = this.isLanded();
+
+          if (this.gameOver) {
+            // this.resetField(); // フィールドをリセット
+            // ゲームオーバーダイアログを表示する
+            document.getElementById("gameOverDialog").style.display = "block";
+            document.getElementById("finalScore").innerText = this.totalScore;
+          }
+        }
+      }
+
+      // フェードアウトを更新するメソッド
+      updateFadeOut() {
+        // ブロックがフェードアウト中の場合、透明度を減らす
+        this.fadeouting = false;
+        for (let y = 0; y < fieldHeight; y++) {
+          for (let x = 0; x < fieldWidth; x++) {
+            const block = this.field[y][x];
+            if (block && block.fadingOut) {
+              this.fadeouting = true;
+              block.opacity -= 0.02;
+              if (block.opacity <= 0) {
+                this.field[y][x] = null;
+              }
+            }
+          }
+        }
+        // フェードアウト中のブロックがすべて完全に消えたら、ブロック落下の処理を行う
+        if (!this.fadeouting) {
+          this.dropBlocks();
+        }
+      }
+
+      // 着地しているかどうかを判定するメソッド
+      isLanded() {
+        return (
+          !this.isInBounds(this.currentPair[0].x, this.currentPair[0].y) ||
+          !this.isInBounds(this.currentPair[1].x, this.currentPair[1].y) ||
+          this.field[this.currentPair[0].y][this.currentPair[0].x] !== null ||
+          this.field[this.currentPair[1].y][this.currentPair[1].x] !== null
+        );
+      }
+
+      // 3つ連続したブロックをチェックするメソッド
+      checkForTriads() {
+        const foundTriads = [];
+        let newTriadDetected = false;
+
+        // 定義済みのtriads配列から各トライアドをチェック
+        for (let y = 0; y < fieldHeight; y++) {
+          for (let x = 0; x < fieldWidth; x++) {
+            const currentBlock = this.field[y][x];
+
+            // 現在のブロックがトライアドの一部である場合
+            if (currentBlock) {
+              for (const triad of triads) {
+                const triadArray = triad.split('');
+                if (triadArray.includes(currentBlock.note)) {
+                  // 横方向に3つ連続しているかチェック
+                  if (x < fieldWidth - 2 && this.isTriadMatchHorizontal(x, y, triadArray)) {
+                    foundTriads.push({ x, y });
+                    foundTriads.push({ x: x + 1, y });
+                    foundTriads.push({ x: x + 2, y });
+                    console.log(`Triad: ${triad}, Coordinates: (${x}, ${y}), (${x + 1}, ${y}), (${x + 2}, ${y}), Direction: Horizontal`);
+                    let [root, third, fifth] = triad.split('');
+                    this.sounds.playSE(root, third, fifth); // 形成したトライアドの音を鳴らす
+                    this.addScore(); // 得点を加算
+                    // 各連続したブロックについて、フェードアウトを開始
+                    for (const triad of foundTriads) {
+                      this.field[triad.y][triad.x].fadingOut = true;
+                      newTriadDetected = true;
+                    }
+                  }
+
+                  // 縦方向に3つ連続しているかチェック
+                  if (y < fieldHeight - 2 && this.isTriadMatchVertical(x, y, triadArray, checkDirection)) {
+                    foundTriads.push({ x, y });
+                    foundTriads.push({ x, y: y + 1 });
+                    foundTriads.push({ x, y: y + 2 });
+                    console.log(`Triad: ${triad}, Coordinates: (${x}, ${y}), (${x}, ${y + 1}), (${x}, ${y + 2}), Direction: Vertical`);
+                    let [root, third, fifth] = triad.split('');
+                    this.sounds.playSE(root, third, fifth); // 形成したトライアドの音を鳴らす
+                    this.addScore(); // 得点を加算
+                    // 各連続したブロックについて、フェードアウトを開始
+                    for (const triad of foundTriads) {
+                      this.field[triad.y][triad.x].fadingOut = true;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        return newTriadDetected;
+      }
+
+      // 横方向にトライアドがマッチしているかをチェックするメソッド
+      isTriadMatchHorizontal(x, y, triadArray) {
+        // 現在の座標から横方向に3つ連続したブロックのノート名を取得し、文字列として結合
+        const sequence = [
+          this.field[y][x]?.note,
+          this.field[y][x + 1]?.note,
+          this.field[y][x + 2]?.note
+        ].join('');
+
+        return triadArray.join('') === sequence; // 連続したブロックのノート名がトライアドと一致しているかを確認
+      }
+
+      // 縦方向にトライアドがマッチしているかをチェックするメソッド
+      isTriadMatchVertical(x, y, triadArray, checkDirection) {
+        // 現在の座標から縦方向に3つ連続したブロックのノート名を取得し、文字列として結合
+        let sequence;
+        if (checkDirection === 'up-down') {
+          sequence = [
+            this.field[y][x]?.note,
+            this.field[y + 1][x]?.note,
+            this.field[y + 2][x]?.note
+          ].join('');
+        } else if (checkDirection === 'down-up') {
+          sequence = [
+            this.field[y + 2][x]?.note,
+            this.field[y + 1][x]?.note,
+            this.field[y][x]?.note
+          ].join('');
+        } else {
+          return false;
+        }
+        return triadArray.join('') === sequence; // 連続したブロックのノート名がトライアドと一致しているかを確認
+      }
+
+      // 得点を加算するメソッド
+      addScore() {
+        // 得点を加算
+        let getScore = this.getScore * Math.pow(2, this.chainCount - 1);
+        console.log(`add score: ${getScore}`);
+        console.log(`chainCount: ${this.chainCount}`)
+        this.totalScore += getScore;
+        console.log(`totalScore: ${this.totalScore}`)
+        this.updateScoreDisplay();
+      }
+
+      // ブロックを下に落とすメソッド
+      dropBlocks() {
+        // dropBlocks実行中はメインループ停止
+        this.dropping = true;
+        // ゲームがポーズされている場合は、処理を停止
+        if (this.gamePaused) {
+          dropBlocks();
+        }
+
+        let chainDetected = false; // 連鎖が検出されたかどうかを保持する変数
+        // フィールド内のブロックを下に落とす
+        // y軸方向に後ろから順にループを回す
+        for (let y = fieldHeight - 1; y >= 0; y--) {
+          // x軸方向にループを回す
+          for (let x = 0; x < fieldWidth; x++) {
+            // 現在の座標にあるブロックを取得
+            const block = this.field[y][x];
+
+            // ブロックが存在し、フェードアウト中でない場合
+            if (block && !block.fadingOut) {
+              // 新しいy座標を求めるための変数を定義
+              let newY = y + 1;
+
+              // newYがフィールドの高さ内で、その座標にブロックがない場合、繰り返す
+              while (newY < fieldHeight && !this.field[newY][x]) {
+                newY++;
+              }
+              // newYが1つ前の空の位置になるようにデクリメント
+              newY--;
+
+              // newY が現在の y と異なる場合、ブロックを移動する
+              if (newY !== y) {
+                this.field[y][x] = null;
+                this.field[newY][x] = block;
+                block.y = newY;
+              }
+            }
+          }
+        }
+
+        // ブロックが移動した後、新たなトライアドができていないかチェック
+        if (this.checkForTriads()) {
+          if (!this.chainStarted) {
+            this.chainStarted = true;
+          }
+          this.chainCount++;
+        } else {
+          this.chainStarted = false;
+          this.chainCount = 1;
+          this.chainDismiss();
+        }
+        this.dropping = false;
+      }
+
+      // 描画を行うメソッド
+      draw() {
+        // キャンバスをクリアする
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 背景色を追加
+        ctx.fillStyle = '#f0f0f0'; // 背景色を設定
+        ctx.fillRect(0, 0, canvas.width, canvas.height); // 背景を描画
+
+        // フィールド上のブロックを描画する
+        // y軸方向にループを回す
+        for (let y = 0; y < fieldHeight; y++) {
+          // x軸方向にループを回す
+          for (let x = 0; x < fieldWidth; x++) {
+            // 現在の座標にあるブロックを取得
+            const block = this.field[y][x];
+            // ブロックが存在する場合、描画する
+            if (block) {
+              block.draw();
+            }
+          }
+        }
+
+        // 現在操作中のブロックペアを描画する
+        this.currentPair[0].draw();
+        this.currentPair[1].draw();
+      }
+
+      resetField() {
+        this.interval = this.dropInterval; // ソフトドロップ中だった場合解除する
+        this.chainCount = 1; // 連鎖数をリセット
+        this.totalScore = 0; // 得点をリセット
+        this.updateScoreDisplay();
+        this.field = this.createEmptyField();
+        this.currentPair[0].y = 0;
+        this.currentPair[1].y = 0;
+        this.gameOver = false; // ゲームオーバー状態をリセット
+      }
+
+      // スコア表示を更新する関数
+      updateScoreDisplay() {
+        const scoreElement = document.getElementById('score');
+        scoreElement.innerText = this.totalScore;
+        if (this.chainCount > 1) {
+          const chainLabel = document.getElementById('chainLabel');
+          chainLabel.style.display = 'block';
+          const chainCount = document.getElementById('chain');
+          chainLabel.style.display = 'block';
+          chainCount.innerText = this.chainCount;
+        }
+      }
+
+      chainDismiss() {
+        const chainLabel = document.getElementById('chainLabel');
+        chainLabel.style.display = 'none';
+        const chainCount = document.getElementById('chain');
+        chainLabel.style.display = 'none';
+      }
+
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const dialog = document.getElementById('dialog');
+      const startButton = document.getElementById('startButton');
+      // ゲームが開始されるまでダイアログを表示
+      dialog.style.display = 'block';
+
+      // startButtonがクリックされたときにゲームを開始
+      startButton.addEventListener('click', () => {
+        dialog.style.display = 'none'; // ダイアログを非表示にする
+        game = new Game(); // ゲームを開始する
+      });
+    });
+
+    // checkDirection の切り替え
+    document.querySelectorAll('[name="checkDirection"]').forEach((radio) => {
+      radio.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          checkDirection = e.target.value;
+        }
+      });
+    });
+
+    // ワンスモアボタンがクリックされたときの処理
+    document.getElementById("retryButton").addEventListener("click", () => {
+      document.getElementById("gameOverDialog").style.display = "none";
+      this.gameOver = false;
+      game.resetField();
+    });
+
+  </script>
+</body>
+
+</html>
